@@ -1,0 +1,102 @@
+name: CI
+
+# Quality gate for every pull request and every push to main: checks, tests,
+# production build, plus a Docker build + runtime smoke test of the image.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Astro check
+        run: npm run check
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  docker:
+    name: Docker build + smoke test
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: portal:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: |
+          # Grab a free port so the job never collides with a fixed one.
+          port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+          echo "Smoke testing on 127.0.0.1:${port}"
+          docker run -d --name portal-ci -p "127.0.0.1:${port}:8080" portal:ci
+          trap 'docker rm -f portal-ci >/dev/null 2>&1 || true' EXIT
+
+          # Wait for nginx to accept connections.
+          ready=""
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${port}/healthz.txt" >/dev/null 2>&1; then ready=1; break; fi
+            sleep 1
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::Container did not answer /healthz.txt within 30s"
+            docker logs portal-ci || true
+            exit 1
+          fi
+
+          body=$(curl -fsS "http://127.0.0.1:${port}/healthz.txt")
+          if [ "$body" != "ok" ]; then
+            echo "::error::/healthz.txt returned '${body}', expected 'ok'"
+            exit 1
+          fi
+
+          code=$(curl -fsS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/")
+          if [ "$code" != "200" ]; then
+            echo "::error::/ returned HTTP ${code}, expected 200"
+            exit 1
+          fi
+
+          headers=$(curl -fsS -D - -o /dev/null "http://127.0.0.1:${port}/")
+          echo "${headers}"
+          if ! printf '%s\n' "${headers}" | grep -qi '^x-frame-options: *deny'; then
+            echo "::error::X-Frame-Options: DENY header missing on /"
+            exit 1
+          fi
+
+          echo "Smoke test passed"

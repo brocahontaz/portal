@@ -1,5 +1,8 @@
 services:
   portal:
+    # Registry image for the public host (`docker compose pull`); `build` keeps
+    # local dev working via `docker compose up --build`.
+    image: ghcr.io/brocahontaz/portal:latest
     build: .
     container_name: portal
     ports:

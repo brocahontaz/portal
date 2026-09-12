@@ -45,6 +45,62 @@ Or with Compose (host port configurable via `PORT`, defaults to 8080):
 docker compose up --build
 ```
 
+## CI/CD
+
+GitHub Actions live in `.github/workflows/`:
+
+- **CI (`ci.yml`)** — runs on every pull request and push to `main`:
+  `astro check`, `npm test`, `npm run build`, then a Docker build (with a
+  GitHub Actions build cache) and a runtime smoke test: the container must
+  answer `/healthz.txt` with `ok`, serve `/` with HTTP 200, and send the
+  security headers (e.g. `X-Frame-Options: DENY`).
+- **Release (`release.yml`)** — runs on pushes to `main` and on `v*` tags.
+  It re-runs the checks (Actions cannot gate one workflow on another), then
+  builds a multi-arch (`linux/amd64` + `linux/arm64`) image and publishes it
+  to **`ghcr.io/brocahontaz/portal`**:
+
+  | Event | Image tags |
+  | --- | --- |
+  | Tag push `v1.2.3` | `1.2.3`, `1.2`, `sha-<short>` |
+  | Push to `main` | `latest`, `sha-<short>` |
+
+  Deployments only run for pushes to `main` and stay a no-op until the host
+  secrets below are configured.
+
+### Deploying on the public host
+
+The host needs Docker with the Compose plugin and a deploy directory
+(default `/opt/portal`, configurable) containing this repo's
+`docker-compose.yml` — it pins `image: ghcr.io/brocahontaz/portal:latest`, so
+deployment is just:
+
+```bash
+docker compose pull
+docker compose up -d --remove-orphans
+docker image prune -f
+```
+
+The workflow does this over SSH when these secrets are set (**Settings →
+Secrets and variables → Actions**):
+
+| Secret | Required | Description |
+| --- | --- | --- |
+| `DEPLOY_HOST` | yes | Public hostname of the deploy host |
+| `DEPLOY_USER` | yes | SSH user on the deploy host |
+| `DEPLOY_SSH_KEY` | yes | Private SSH key authorized for that user |
+| `DEPLOY_PORT` | no | SSH port (default `22`) |
+| `DEPLOY_DIR` | no | Repository *variable*: deploy directory (default `/opt/portal`) |
+
+### Making the image pullable
+
+The GHCR package inherits the repository's visibility. If this repo is
+private, the deploy host must authenticate before `docker compose pull`
+(`docker login ghcr.io` with a personal access token that has
+`read:packages` scope). To avoid that, make the package public: on GitHub,
+open the repository's **Packages** entry for `ghcr.io/brocahontaz/portal`
+(or your profile → **Packages**), go to **Package settings** → **Danger
+Zone** → **Change visibility** → **Public**.
+
 ## Adding or editing a service
 
 > **Note:** the live/beta service URLs currently point at `*.example.com`
@@ -82,6 +138,10 @@ Rules:
 ## Project structure
 
 ```
+├── .github/
+│   └── workflows/
+│       ├── ci.yml             # PR/main gate: check, test, build, image smoke test
+│       └── release.yml        # publish multi-arch image to ghcr.io + SSH deploy
 ├── astro.config.mjs          # Astro config (static output, external stylesheets)
 ├── nginx/
 │   └── default.conf          # site config: gzip, caching, security headers

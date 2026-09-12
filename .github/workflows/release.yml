@@ -1,0 +1,133 @@
+name: Release
+
+# Build and publish the multi-arch image to ghcr.io on pushes to main and on
+# v* tags, then optionally deploy to the public host over SSH.
+#
+# GitHub Actions cannot gate one workflow on another, so the `test` job below
+# re-runs the same quality gate as ci.yml before anything is published.
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+# One run at a time per ref: queued (not cancelled) so an in-progress deploy
+# is never interrupted and concurrent main pushes cannot race each other.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Check, test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Astro check
+        run: npm run check
+
+      - name: Tests
+        run: npm test
+
+  publish:
+    name: Publish image to ghcr.io
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ghcr.io image names must be lowercase; lower the "owner/repo" slug.
+      - name: Compute image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to host
+    needs: publish
+    # Only deploy from main pushes — never from tag-only runs.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # Secret presence is checked here (not in a job-level `if`, where the
+      # secrets context is unavailable) so the job is a graceful no-op until
+      # the host secrets are configured. Values are never printed.
+      - name: Evaluate deploy configuration
+        id: cfg
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ] && [ -n "$DEPLOY_SSH_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Deploy skipped: set the DEPLOY_HOST, DEPLOY_USER and DEPLOY_SSH_KEY repository secrets to enable deployment."
+          fi
+
+      - name: Deploy
+        if: steps.cfg.outputs.configured == 'true'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          script: |
+            set -e
+            cd "${{ vars.DEPLOY_DIR || '/opt/portal' }}"
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
