@@ -1,0 +1,67 @@
+---
+import { site } from "../config/site";
+---
+
+<header class="site-header">
+  <div class="container site-header-inner">
+    <a class="brand" href="/" aria-label={`${site.name} home`}>
+      <svg
+        class="brand-mark"
+        viewBox="0 0 24 24"
+        width="20"
+        height="20"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3 18 9.5 6.5l4 6.5 3-4.5L21 18Z"></path>
+        <circle cx="19" cy="4.75" r="1.25" fill="currentColor" stroke="none"></circle>
+      </svg>
+      <span class="brand-name">{site.name}</span>
+    </a>
+    <span class="header-label">Public services</span>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  .site-header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    height: 64px;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: -0.01em;
+  }
+
+  .brand-mark {
+    color: var(--color-accent);
+    flex-shrink: 0;
+  }
+
+  .header-label {
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+  }
+
+  @media (max-width: 480px) {
+    .header-label {
+      display: none;
+    }
+  }
+</style>

@@ -1,0 +1,24 @@
+---
+import { site } from "../config/site";
+
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container">
+    <p>{site.footer} · © {year}</p>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    border-top: 1px solid var(--color-border);
+    margin-top: var(--space-7);
+    padding-block: var(--space-5);
+  }
+
+  .site-footer p {
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+  }
+</style>

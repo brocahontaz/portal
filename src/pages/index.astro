@@ -1,0 +1,98 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import ServiceCard from "../components/ServiceCard.astro";
+import { site } from "../config/site";
+import { services } from "../config/services";
+import type { Service } from "../config/validate";
+
+interface CategoryGroup {
+  name: string;
+  slug: string;
+  items: Service[];
+}
+
+const slugify = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+// Group services by category, preserving order of first appearance:
+// reordering the services array reorders the page sections.
+const categories: CategoryGroup[] = [];
+for (const service of services) {
+  const existing = categories.find((group) => group.name === service.category);
+  if (existing) {
+    existing.items.push(service);
+  } else {
+    categories.push({
+      name: service.category,
+      slug: slugify(service.category),
+      items: [service],
+    });
+  }
+}
+---
+
+<BaseLayout>
+  <SiteHeader />
+
+  <section class="hero container">
+    <h1>{site.title}</h1>
+    <p class="hero-desc">{site.tagline}</p>
+  </section>
+
+  <main id="main" class="container">
+    {
+      categories.map((group) => (
+        <section class="service-section" aria-labelledby={`category-${group.slug}`}>
+          <h2 id={`category-${group.slug}`}>{group.name}</h2>
+          <div class="card-grid">
+            {group.items.map((service) => (
+              <ServiceCard service={service} />
+            ))}
+          </div>
+        </section>
+      ))
+    }
+  </main>
+
+  <SiteFooter />
+</BaseLayout>
+
+<style>
+  .hero {
+    padding-block: var(--space-8) var(--space-6);
+  }
+
+  .hero h1 {
+    font-size: clamp(1.75rem, 3vw, 2.25rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .hero-desc {
+    margin-top: var(--space-2);
+    color: var(--color-text-muted);
+    max-width: 60ch;
+  }
+
+  .service-section {
+    padding-block: var(--space-4);
+  }
+
+  .service-section h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: var(--space-4);
+  }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: var(--space-4);
+  }
+</style>

@@ -1,0 +1,23 @@
+{
+  "name": "portal",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Public front door for Fjällbark's self-hosted services",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "astro": "^5.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

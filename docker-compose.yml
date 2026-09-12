@@ -1,0 +1,7 @@
+services:
+  portal:
+    build: .
+    container_name: portal
+    ports:
+      - "${PORT:-8080}:8080"
+    restart: unless-stopped
