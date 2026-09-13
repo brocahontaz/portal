@@ -7,4 +7,11 @@ services:
     container_name: portal
     ports:
       - "${PORT:-8080}:8080"
+    # Runtime services config (see README "Docker"): when set to the path of a
+    # JSON file mounted into the container, the entrypoint re-renders the site
+    # from it at container start. The `:-` empty default arrives set-but-empty
+    # — safe: the entrypoint treats that like unset and serves the baked-in
+    # services.
+    environment:
+      PORTAL_SERVICES_PATH: "${PORTAL_SERVICES_PATH:-}"
     restart: unless-stopped
