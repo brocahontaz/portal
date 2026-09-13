@@ -45,6 +45,50 @@ Or with Compose (host port configurable via `PORT`, defaults to 8080):
 docker compose up --build
 ```
 
+### Runtime service config
+
+At container start the entrypoint can re-render the page from a services JSON
+file instead of the registry baked into the image (`src/config/services.ts`):
+point `PORTAL_SERVICES_PATH` at the file's path *inside the container* and
+mount the file there. `docker-compose.yml` passes the variable through from
+the host (environment variable or `.env` file next to the compose file):
+
+```bash
+# one-off with docker run
+docker run -d --name portal -p 8080:8080 \
+  -e PORTAL_SERVICES_PATH=/data/services.json \
+  -v ./services.json:/data/services.json:ro \
+  ghcr.io/brocahontaz/portal:latest
+```
+
+or with Compose — a small `docker-compose.override.yml` for the mount (compose
+auto-loads it on top of `docker-compose.yml`; keep it out of version
+control), plus the host variable:
+
+```yaml
+# docker-compose.override.yml
+services:
+  portal:
+    volumes:
+      - ./services.json:/data/services.json:ro
+```
+
+```bash
+PORTAL_SERVICES_PATH=/data/services.json docker compose up -d
+```
+
+Behavior — fail-fast, so a bad config can never silently change the page:
+
+- `PORTAL_SERVICES_PATH` unset, empty, or pointing at a file that does not
+  exist → the baked-in default registry is served.
+- The file exists but is invalid (bad JSON, not an array, missing fields,
+  duplicate ids/names, unknown icon, invalid status, `live`/`beta` with a
+  non-`https://` URL, `planned` with a non-empty URL, ...) → the container
+  exits non-zero at start and never serves.
+
+`config/services.example.json` is a schema example mirroring the registry
+array shape (same fields as [Adding or editing a service](#adding-or-editing-a-service)).
+
 ## CI/CD
 
 GitHub Actions live in `.github/workflows/`:
@@ -100,6 +144,26 @@ private, the deploy host must authenticate before `docker compose pull`
 open the repository's **Packages** entry for `ghcr.io/brocahontaz/portal`
 (or your profile → **Packages**), go to **Package settings** → **Danger
 Zone** → **Change visibility** → **Public**.
+
+### Using your own registry image
+
+If you publish the image to your own registry instead of
+`ghcr.io/brocahontaz/portal`, point compose at it with a
+`docker-compose.override.yml` (compose auto-loads this file on top of
+`docker-compose.yml`; keep it out of version control):
+
+```yaml
+services:
+  portal:
+    image: registry.example.com/fjallbark/portal:latest
+    build: !reset null   # drop the local build; always pull
+```
+
+`build: !reset null` removes the base file's `build:` key, so
+`docker compose pull` fetches your image and `docker compose up -d` deploys
+it — no local build, no GHCR authentication. (The `!reset`/`!override` YAML
+tags require a reasonably recent Compose — v2.26+, 2024 — older versions fail
+with a cryptic unknown-YAML-tag error.)
 
 ## Adding or editing a service
 
